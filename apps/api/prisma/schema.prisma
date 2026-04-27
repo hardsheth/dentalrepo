@@ -1,0 +1,553 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPERADMIN
+  CLINIC_ADMIN
+  DENTIST
+  RECEPTIONIST
+  HR_MANAGER
+  BILLING_STAFF
+  ASSISTANT
+}
+
+enum AppointmentStatus {
+  scheduled
+  confirmed
+  in_progress
+  completed
+  cancelled
+  no_show
+}
+
+enum InvoiceStatus {
+  draft
+  issued
+  partially_paid
+  paid
+  void
+}
+
+enum PaymentMethod {
+  cash
+  card
+  upi
+  insurance
+  bank_transfer
+}
+
+enum DiscountType {
+  percent
+  fixed
+}
+
+enum LeaveRequestStatus {
+  pending
+  approved
+  rejected
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  orgId       String   @unique @default(uuid())
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  clinic      Clinic?
+  users       User[]
+  auditLogs   AuditLog[]
+}
+
+model Clinic {
+  id            String   @id @default(uuid())
+  orgId         String   @unique
+  name          String
+  address       String
+  phone         String
+  email         String
+  timezone      String
+  gstNumber     String?
+  licenseNumber String?
+  logoUrl       String?
+  workingHours  Json
+  chairCount    Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  users         User[]
+
+  @@index([orgId])
+}
+
+model User {
+  id              String   @id @default(uuid())
+  orgId           String
+  clinicId        String
+  email           String
+  passwordHash    String?
+  firstName       String
+  lastName        String
+  role            Role
+  isActive        Boolean  @default(true)
+  invitedAt       DateTime?
+  inviteAcceptedAt DateTime?
+  deletedAt       DateTime?
+  deletedBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  org             Organization @relation(fields: [orgId], references: [id])
+  clinic          Clinic @relation(fields: [clinicId], references: [id])
+  refreshTokens   RefreshToken[]
+
+  @@unique([orgId, email])
+  @@index([orgId, clinicId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  orgId     String
+  clinicId  String
+  jti       String   @unique
+  family    String
+  userId    String
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([orgId, clinicId, userId])
+  @@index([family])
+}
+
+model UserClinicMembership {
+  id         String   @id @default(uuid())
+  orgId      String
+  clinicId   String
+  userId     String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@unique([orgId, clinicId, userId])
+  @@index([orgId, clinicId])
+}
+
+model UserPermissionOverride {
+  id          String   @id @default(uuid())
+  orgId       String
+  clinicId    String
+  userId      String
+  permission  String
+  granted     Boolean
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  @@index([orgId, clinicId, userId])
+}
+
+model StaffAvailability {
+  id        String @id @default(uuid())
+  orgId     String
+  clinicId  String
+  userId    String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, clinicId, userId, dayOfWeek])
+}
+
+model Patient {
+  id                    String   @id @default(uuid())
+  orgId                 String
+  clinicId              String
+  name                  String
+  dob                   DateTime
+  gender                String
+  phone                 String
+  email                 String?
+  address               String?
+  bloodGroup            String?
+  allergies             String[]
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  existingConditions    Json?
+  previousDentalWork    Json?
+  deletedAt             DateTime?
+  deletedBy             String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  consents              PatientConsent[]
+  notes                 PatientNote[]
+
+  @@index([orgId, clinicId, deletedAt])
+}
+
+model PatientConsent {
+  id           String   @id @default(uuid())
+  orgId        String
+  clinicId     String
+  patientId    String
+  consentedAt  DateTime
+  collectedBy  String
+  consentGiven Boolean
+  createdAt    DateTime @default(now())
+
+  patient      Patient  @relation(fields: [patientId], references: [id])
+
+  @@index([orgId, clinicId, patientId])
+}
+
+model PatientNote {
+  id            String   @id @default(uuid())
+  orgId         String
+  clinicId      String
+  patientId     String
+  appointmentId String?
+  authorId      String
+  note          String
+  createdAt     DateTime @default(now())
+
+  patient       Patient  @relation(fields: [patientId], references: [id])
+
+  @@index([orgId, clinicId, patientId])
+}
+
+model Appointment {
+  id          String   @id @default(uuid())
+  orgId       String
+  clinicId    String
+  patientId   String
+  dentistId   String
+  serviceId   String
+  startAtUtc  DateTime
+  endAtUtc    DateTime
+  status      AppointmentStatus
+  deletedAt   DateTime?
+  deletedBy   String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orgId, clinicId, dentistId, startAtUtc])
+  @@index([orgId, clinicId, status, deletedAt])
+}
+
+model AppointmentWaitlist {
+  id                 String   @id @default(uuid())
+  orgId              String
+  clinicId           String
+  patientId          String
+  dentistId          String
+  preferredDateRange Json
+  createdAt          DateTime @default(now())
+
+  @@index([orgId, clinicId, dentistId])
+}
+
+model Treatment {
+  id            String   @id @default(uuid())
+  orgId         String
+  clinicId      String
+  appointmentId String
+  dentistId     String
+  clinicalNotes String
+  toothNumbers  Int[]
+  materialsUsed Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  procedures    TreatmentProcedure[]
+
+  @@index([orgId, clinicId, appointmentId])
+}
+
+model TreatmentProcedure {
+  id         String   @id @default(uuid())
+  orgId      String
+  clinicId   String
+  treatmentId String
+  serviceId   String
+  quantity   Int
+  unitPrice  Decimal  @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+
+  treatment Treatment @relation(fields: [treatmentId], references: [id])
+
+  @@index([orgId, clinicId, treatmentId])
+}
+
+model ServiceCatalogItem {
+  id              String   @id @default(uuid())
+  orgId           String
+  clinicId        String
+  name            String
+  category        String
+  code            String
+  durationMinutes Int
+  basePrice       Decimal  @db.Decimal(10, 2)
+  taxRate         Decimal  @db.Decimal(5, 2)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([orgId, clinicId, code])
+  @@index([orgId, clinicId, category])
+}
+
+model ClinicPriceOverride {
+  id         String   @id @default(uuid())
+  orgId      String
+  clinicId   String
+  serviceId  String
+  price      Decimal  @db.Decimal(10, 2)
+  effectiveFrom DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([orgId, clinicId, serviceId])
+}
+
+model BillingRule {
+  id          String   @id @default(uuid())
+  orgId       String
+  clinicId    String
+  name        String
+  description String?
+  priority    Int
+  active      Boolean  @default(true)
+  condition   Json
+  action      Json
+  createdAt   DateTime @default(now())
+
+  @@index([orgId, clinicId, active, priority])
+}
+
+model Invoice {
+  id           String   @id @default(uuid())
+  orgId        String
+  clinicId     String
+  patientId    String
+  appointmentId String?
+  status       InvoiceStatus @default(draft)
+  subtotal     Decimal  @db.Decimal(12, 2)
+  taxTotal     Decimal  @db.Decimal(12, 2)
+  discountTotal Decimal @db.Decimal(12, 2)
+  total        Decimal  @db.Decimal(12, 2)
+  deletedAt    DateTime?
+  deletedBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  lineItems    InvoiceLineItem[]
+  payments     Payment[]
+
+  @@index([orgId, clinicId, status, deletedAt])
+}
+
+model InvoiceLineItem {
+  id            String   @id @default(uuid())
+  orgId         String
+  clinicId      String
+  invoiceId     String
+  serviceName   String
+  serviceId     String?
+  quantity      Int
+  unitPrice     Decimal  @db.Decimal(10, 2)
+  discountType  DiscountType?
+  discountValue Decimal? @db.Decimal(10, 2)
+  taxRate       Decimal  @db.Decimal(5, 2)
+  lineTotal     Decimal  @db.Decimal(12, 2)
+  createdAt     DateTime @default(now())
+
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([orgId, clinicId, invoiceId])
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  orgId           String
+  clinicId        String
+  invoiceId       String
+  amount          Decimal  @db.Decimal(12, 2)
+  method          PaymentMethod
+  referenceNumber String?
+  date            DateTime
+  recordedBy      String
+  createdAt       DateTime @default(now())
+
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([orgId, clinicId, invoiceId])
+}
+
+model File {
+  id               String   @id @default(uuid())
+  orgId            String
+  clinicId         String
+  fileKey          String
+  bucket           String
+  mimeType         String
+  sizeBytes        Int
+  linkedEntityType String
+  linkedEntityId   String
+  uploadedBy       String
+  createdAt        DateTime @default(now())
+
+  @@index([orgId, clinicId, linkedEntityType, linkedEntityId])
+}
+
+model LeaveType {
+  id        String   @id @default(uuid())
+  orgId     String
+  clinicId  String
+  name      String
+  annualQuota Int
+  createdAt DateTime @default(now())
+
+  @@index([orgId, clinicId])
+}
+
+model LeaveRequest {
+  id           String   @id @default(uuid())
+  orgId        String
+  clinicId     String
+  userId       String
+  leaveTypeId  String
+  startDate    DateTime
+  endDate      DateTime
+  reason       String
+  status       LeaveRequestStatus @default(pending)
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([orgId, clinicId, userId, status])
+}
+
+model LeaveBalance {
+  id          String   @id @default(uuid())
+  orgId       String
+  clinicId    String
+  userId      String
+  leaveTypeId String
+  year        Int
+  balance     Decimal  @db.Decimal(8, 2)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([orgId, clinicId, userId, leaveTypeId, year])
+}
+
+model AttendanceLog {
+  id             String   @id @default(uuid())
+  orgId          String
+  clinicId       String
+  userId         String
+  attendanceDate DateTime
+  checkInAt      DateTime?
+  checkOutAt     DateTime?
+  overriddenBy   String?
+  overrideReason String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([orgId, clinicId, userId, attendanceDate])
+}
+
+model PayrollCycle {
+  id         String   @id @default(uuid())
+  orgId      String
+  clinicId   String
+  month      Int
+  year       Int
+  createdBy  String
+  createdAt  DateTime @default(now())
+
+  @@unique([orgId, clinicId, month, year])
+}
+
+model PayrollRun {
+  id            String   @id @default(uuid())
+  orgId         String
+  clinicId      String
+  cycleId       String
+  status        String
+  approvedBy    String?
+  approvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  items         PayrollItem[]
+
+  @@index([orgId, clinicId, cycleId, status])
+}
+
+model PayrollItem {
+  id            String   @id @default(uuid())
+  orgId         String
+  clinicId      String
+  runId         String
+  userId        String
+  baseSalary    Decimal  @db.Decimal(12, 2)
+  allowances    Decimal  @db.Decimal(12, 2)
+  deductions    Decimal  @db.Decimal(12, 2)
+  overtimePay   Decimal  @db.Decimal(12, 2)
+  tax           Decimal  @db.Decimal(12, 2)
+  leaveWithoutPay Decimal @db.Decimal(12, 2)
+  netPay        Decimal  @db.Decimal(12, 2)
+  createdAt     DateTime @default(now())
+
+  run           PayrollRun @relation(fields: [runId], references: [id])
+
+  @@index([orgId, clinicId, runId, userId])
+}
+
+model Payslip {
+  id          String   @id @default(uuid())
+  orgId       String
+  clinicId    String
+  payrollItemId String
+  fileId      String
+  generatedAt DateTime @default(now())
+
+  @@index([orgId, clinicId, payrollItemId])
+}
+
+model NotificationLog {
+  id          String   @id @default(uuid())
+  orgId       String
+  clinicId    String
+  channel     String
+  recipient   String
+  template    String
+  status      String
+  payload     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([orgId, clinicId, channel, status])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  orgId      String
+  clinicId   String?
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  org        Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([orgId, entityType, entityId])
+}
