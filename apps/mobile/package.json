@@ -1,0 +1,12 @@
+{
+  "name": "@dental/mobile",
+  "private": true,
+  "main": "expo/AppEntry",
+  "dependencies": {
+    "expo": "^52.0.0",
+    "expo-notifications": "~0.29.14",
+    "expo-secure-store": "~14.0.1",
+    "react": "18.3.1",
+    "react-native": "0.76.3"
+  }
+}
